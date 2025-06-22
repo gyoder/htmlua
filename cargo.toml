@@ -1,0 +1,3 @@
+[workspace]
+members = ["htmlua-parser", "htmlua-server"]
+resolver = "2"

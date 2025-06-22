@@ -1,0 +1,10 @@
+[package]
+name = "htmlua-parser"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.98"
+kuchikiki = "0.8.2"
+mlua = { version = "0.10.5", features = ["lua54", "vendored", "serialize"] }
+tendril = "0.4.3"
