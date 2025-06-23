@@ -1,5 +1,3 @@
-#![warn(clippy::pedantic)]
-
 use std::cell::RefCell;
 use std::fmt::Write;
 use std::rc::Rc;
@@ -24,8 +22,7 @@ fn create_luahtml_stdlib(l: &Lua, stdout: &Rc<RefCell<String>>) -> mlua::Result<
         "println",
         l.create_function(move |_, text: String| {
             let mut stdout_ref = stdout_println.borrow_mut();
-            writeln!(stdout_ref, "{text}").map_err(mlua::Error::external)?;
-            Ok(())
+            writeln!(stdout_ref, "{text}").map_err(mlua::Error::external)
         })?,
     )?;
 
@@ -34,15 +31,17 @@ fn create_luahtml_stdlib(l: &Lua, stdout: &Rc<RefCell<String>>) -> mlua::Result<
         "print",
         l.create_function(move |_, text: String| {
             let mut stdout_ref = stdout_print.borrow_mut();
-            write!(stdout_ref, "{text}").map_err(mlua::Error::external)?;
-            Ok(())
+            write!(stdout_ref, "{text}").map_err(mlua::Error::external)
         })?,
     )?;
     Ok(t)
 }
 
-pub fn parse<F: fmt::Format, A: Atomicity, T: Into<Tendril<F, A>>>(to_parse: T) -> Result<NodeRef>
+pub fn parse<F, A, T>(to_parse: T) -> Result<NodeRef>
 where
+    F: fmt::Format,
+    A: Atomicity,
+    T: Into<Tendril<F, A>>,
     tendril::Tendril<tendril::fmt::UTF8>: std::convert::From<tendril::Tendril<F, A>>,
 {
     let document = kuchikiki::parse_html().one(to_parse.into());
@@ -52,11 +51,11 @@ where
     let stdout: Rc<RefCell<String>> = Rc::new(RefCell::new(String::new()));
 
     let htmlua_table = create_luahtml_stdlib(&lua, &stdout)
-        .map_err(|e| anyhow::anyhow!("Failed to create Lua stdlib: {}", e))?;
+        .map_err(|e| anyhow!("Failed to create Lua stdlib: {}", e))?;
 
     globals
         .set("htmlua", htmlua_table)
-        .map_err(|e| anyhow::anyhow!("Failed to set global: {}", e))?;
+        .map_err(|e| anyhow!("Failed to set global: {}", e))?;
 
     let lua_elements: Vec<_> = match document.select("lua") {
         Ok(e) => e.collect(),
@@ -69,7 +68,7 @@ where
                 stdout.borrow_mut().clear();
                 lua.load(lua_code.borrow().as_str())
                     .exec()
-                    .map_err(|e| anyhow::anyhow!("Failed to execute Lua: {}", e))?;
+                    .map_err(|e| anyhow!("Failed to execute Lua: {}", e))?;
                 node.as_node()
                     .insert_before(NodeRef::new_text(stdout.borrow().as_str()));
                 node.as_node().detach();
@@ -85,7 +84,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn base() -> Result<()> {
+    fn base() {
         let page = r#"
             <!DOCTYPE html>
             <html>
@@ -100,10 +99,9 @@ mod tests {
                 </lua></span>
             </body>
             </html>"#;
-        let d = parse(page)?;
+        let d = parse(page).unwrap();
         let text = d.select_first("span").unwrap().as_node().text_contents();
         assert_eq!(text, "Test from Lua!\n");
         assert!(d.select_first("lua").is_err());
-        Ok(())
     }
 }
