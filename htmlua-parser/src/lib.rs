@@ -1,5 +1,7 @@
 use std::cell::RefCell;
 use std::fmt::Write;
+use std::fs::read_to_string;
+use std::path::PathBuf;
 use std::rc::Rc;
 
 use anyhow::Result;
@@ -9,8 +11,7 @@ use kuchikiki::{
     traits::TendrilSink,
 };
 use mlua::{Lua, Table};
-use tendril::fmt;
-use tendril::{Atomicity, Tendril};
+use tendril::Atomicity;
 
 fn create_luahtml_stdlib(l: &Lua, stdout: &Rc<RefCell<String>>) -> mlua::Result<Table> {
     let t = l.create_table()?;
@@ -37,14 +38,7 @@ fn create_luahtml_stdlib(l: &Lua, stdout: &Rc<RefCell<String>>) -> mlua::Result<
     Ok(t)
 }
 
-pub fn parse<F, A, T>(to_parse: T) -> Result<NodeRef>
-where
-    F: fmt::Format,
-    A: Atomicity,
-    T: Into<Tendril<F, A>>,
-    tendril::Tendril<tendril::fmt::UTF8>: std::convert::From<tendril::Tendril<F, A>>,
-{
-    let document = kuchikiki::parse_html().one(to_parse.into());
+pub fn execute_lua(document: NodeRef) -> Result<NodeRef> {
     let lua = Lua::new();
     let globals = lua.globals();
 
@@ -79,12 +73,32 @@ where
     Ok(document)
 }
 
+pub fn expand_template(document: NodeRef, component_path: &PathBuf) -> Result<NodeRef> {
+    for i in document.select("include").map_err(|()| anyhow!("Error finding include"))? {
+        let attrs = match i.as_node().as_element() {
+            Some(e) => e.attributes.borrow(),
+            None => continue,
+        };
+        if let Some(include_path) = attrs.get("path") {
+            let mut item_path = component_path.clone();
+            item_path.push(include_path);
+            println!("{item_path:?}");
+            let component_text = read_to_string(item_path)?;
+            let new_node = kuchikiki::parse_html().one(component_text);
+            let replaced_node = expand_template(new_node, component_path)?;
+            i.as_node().insert_before(replaced_node);
+            i.as_node().detach();
+        }
+    }
+    Ok(document)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn base() {
+    fn basic_lua() {
         let page = r#"
             <!DOCTYPE html>
             <html>
@@ -99,9 +113,59 @@ mod tests {
                 </lua></span>
             </body>
             </html>"#;
-        let d = parse(page).unwrap();
+        let document =  kuchikiki::parse_html().one(page);
+        let d = execute_lua(document).unwrap();
         let text = d.select_first("span").unwrap().as_node().text_contents();
         assert_eq!(text, "Test from Lua!\n");
         assert!(d.select_first("lua").is_err());
     }
+
+    #[test]
+    fn basic_include() {
+        let page = r#"
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Basic HTML Page</title>
+            </head>
+            <body>
+                <h1>Hello World</h1>
+                <p>This is a paragraph.</p>
+                <include path="comp1.html" />
+                <span><lua>
+                    htmlua.println("Test from Lua!")
+                </lua></span>
+            </body>
+            </html>"#;
+        let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        p.push("tests/components");
+        let document =  kuchikiki::parse_html().one(page);
+        let d = expand_template(document, &p).unwrap();
+        let text = d.select_first("span").unwrap().as_node().text_contents();
+        assert_eq!(text, "included1");
+        assert!(d.select_first("include").is_err());
+    }
+
+    #[test]
+    fn recursive_include() {
+        let page = r#"
+            <!DOCTYPE html>
+            <html>
+                <head>
+                    <title>Basic HTML Page</title>
+                </head>
+            <body>
+                <h1>Hello World</h1>
+                <include path="comp2_level1.html" />
+            </body>
+            </html>"#;
+        let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        p.push("tests/components");
+        let document =  kuchikiki::parse_html().one(page);
+        let d = expand_template(document, &p).unwrap();
+        let text = d.select_first("span").unwrap().as_node().text_contents();
+        assert_eq!(text, "included_twice");
+        assert!(d.select_first("include").is_err());
+    }
+
 }
