@@ -6,10 +6,7 @@ use std::rc::Rc;
 
 use anyhow::Result;
 use anyhow::anyhow;
-use kuchikiki::{
-    NodeRef,
-    traits::TendrilSink,
-};
+use kuchikiki::{NodeRef, traits::TendrilSink};
 use mlua::{Lua, Table};
 
 fn create_luahtml_stdlib(l: &Lua, stdout: &Rc<RefCell<String>>) -> mlua::Result<Table> {
@@ -43,8 +40,8 @@ pub fn execute_lua(document: NodeRef) -> Result<NodeRef> {
 
     let stdout: Rc<RefCell<String>> = Rc::new(RefCell::new(String::new()));
 
-    let htmlua_table = create_luahtml_stdlib(&lua, &stdout)
-        .map_err(|e| anyhow!("Failed to create Lua stdlib: {}", e))?;
+    let htmlua_table =
+        create_luahtml_stdlib(&lua, &stdout).map_err(|e| anyhow!("Failed to create Lua stdlib: {}", e))?;
 
     globals
         .set("htmlua", htmlua_table)
@@ -74,20 +71,25 @@ pub fn execute_lua(document: NodeRef) -> Result<NodeRef> {
 
 pub fn expand_template(document: NodeRef, component_path: &PathBuf, include_from: Option<&NodeRef>) -> Result<NodeRef> {
     if let Some(from_node) = include_from {
-
-
-        for i in document.select("includeelement").map_err(|()| anyhow!("Error finding includeelement"))? {
+        for i in document
+            .select("includeelement")
+            .map_err(|()| anyhow!("Error finding includeelement"))?
+        {
             if let Some(name) = i.attributes.borrow().get("name") {
-                let exported = from_node.select_first(format!("exportelement.{name}").as_str()).map_err(|()| anyhow!("Error finding exportelement"))?;
+                let exported = from_node
+                    .select_first(format!("exportelement.{name}").as_str())
+                    .map_err(|()| anyhow!("Error finding exportelement"))?;
                 exported.as_node().children().for_each(|c| i.as_node().insert_after(c));
             }
         }
         while let Ok(i) = document.select_first("includeelement") {
             i.as_node().detach();
         }
-
     }
-    for i in document.select("include").map_err(|()| anyhow!("Error finding include"))? {
+    for i in document
+        .select("include")
+        .map_err(|()| anyhow!("Error finding include"))?
+    {
         let attrs = match i.as_node().as_element() {
             Some(e) => e.attributes.borrow(),
             None => continue,
@@ -125,7 +127,7 @@ mod tests {
                 </lua></span>
             </body>
             </html>"#;
-        let document =  kuchikiki::parse_html().one(page);
+        let document = kuchikiki::parse_html().one(page);
         let d = execute_lua(document).unwrap();
         let text = d.select_first("span").unwrap().as_node().text_contents();
         assert_eq!(text, "Test from Lua!\n");
@@ -151,7 +153,7 @@ mod tests {
                 </div>
             </body>
             </html>"#;
-        let document =  kuchikiki::parse_html().one(page);
+        let document = kuchikiki::parse_html().one(page);
         let d = execute_lua(document).unwrap();
         let text = d.select_first("#ta").unwrap().as_node().text_contents();
         assert_eq!(text, "Test from Lua!\n");
@@ -179,7 +181,7 @@ mod tests {
             </html>"#;
         let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         p.push("tests/components");
-        let document =  kuchikiki::parse_html().one(page);
+        let document = kuchikiki::parse_html().one(page);
         let d = expand_template(document, &p, None).unwrap();
         let text = d.select_first("span").unwrap().as_node().text_contents();
         assert_eq!(text, "included1");
@@ -201,7 +203,7 @@ mod tests {
             </html>"#;
         let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         p.push("tests/components");
-        let document =  kuchikiki::parse_html().one(page);
+        let document = kuchikiki::parse_html().one(page);
         let d = expand_template(document, &p, None).unwrap();
         let text = d.select_first("span").unwrap().as_node().text_contents();
         assert_eq!(text, "included_twice");
@@ -226,7 +228,7 @@ mod tests {
             </html>"#;
         let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         p.push("tests/components");
-        let document =  kuchikiki::parse_html().one(page);
+        let document = kuchikiki::parse_html().one(page);
         let d = expand_template(document, &p, None).unwrap();
         let text = d.select_first("#ta").unwrap().as_node().text_contents();
         assert_eq!(text, "element 1");
@@ -235,5 +237,4 @@ mod tests {
         assert!(d.select_first("exportelement").is_err());
         assert!(d.select_first("includeelement").is_err());
     }
-
 }

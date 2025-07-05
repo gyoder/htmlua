@@ -1,17 +1,11 @@
-use std::env;
-use std::fs;
-use std::fs::read_to_string;
-use std::path::{Path, PathBuf};
-use std::str::FromStr;
 use super::render::execute_lua;
 use super::render::expand_template;
 use anyhow::Result;
-use kuchikiki::{
-    NodeRef,
-    traits::TendrilSink,
-};
+use kuchikiki::traits::TendrilSink;
+use std::fs::read_to_string;
+use std::path::{Path, PathBuf};
 
-pub fn serve_content(request_uri: &str) -> Result<String>{
+pub fn serve_content(request_uri: &str) -> Result<String> {
     // TODO: read from config
     let pages = PathBuf::from("/var/www/htmlua/pages");
     let components = PathBuf::from("/var/www/htmlua/components");
@@ -27,13 +21,4 @@ pub fn serve_content(request_uri: &str) -> Result<String>{
     let executed_doc = execute_lua(full_doc)?;
 
     Ok(executed_doc.to_string())
-}
-
-fn html_escape(input: &str) -> String {
-    input
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&#x27;")
 }

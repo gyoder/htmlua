@@ -1,0 +1,11 @@
+unstable_features = true
+
+max_width = 120
+fn_params_layout = "Compressed"
+fn_single_line = true
+fn_call_width = 120
+where_single_line = true
+brace_style = "PreferSameLine"
+blank_lines_upper_bound = 5
+combine_control_expr = false
+wrap_comments = false
