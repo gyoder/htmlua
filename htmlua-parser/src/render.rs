@@ -4,6 +4,13 @@ use anyhow::{Result, anyhow};
 use kuchikiki::{NodeRef, traits::TendrilSink};
 use mlua::{Lua, Table};
 use pulldown_cmark::{Options, Parser, html};
+use syntect::{
+    easy::HighlightLines,
+    highlighting::{Style, ThemeSet},
+    html::{IncludeBackground, styled_line_to_highlighted_html},
+    parsing::SyntaxSet,
+    util::LinesWithEndings,
+};
 
 fn create_htmlua_stdlib(l: &Lua, stdout: &Rc<RefCell<String>>) -> mlua::Result<Table> {
     let t = l.create_table()?;
@@ -119,10 +126,55 @@ pub fn expand_template(document: NodeRef, component_path: &PathBuf, include_from
             item_path.push(include_path);
             let component_text = read_to_string(item_path)?;
             let new_doc = kuchikiki::parse_html().one(component_text);
-            let new_node = new_doc.select_first("body").map_err(|()| anyhow!("Failed to get body"))?;
+            let new_node = new_doc
+                .select_first("body")
+                .map_err(|()| anyhow!("Failed to get body"))?;
             let replaced_node = expand_template(new_node.as_node().clone(), component_path, Some(i.as_node()))?;
             i.as_node().insert_before(replaced_node);
             i.as_node().detach();
+        }
+    }
+    Ok(document)
+}
+
+pub fn process_syntax_highlighting(document: NodeRef) -> Result<NodeRef> {
+    let ps = SyntaxSet::load_defaults_newlines();
+    let ts = ThemeSet::load_defaults();
+    let syntax_elements: Vec<_> = match document.select("syntaxhighlight") {
+        Ok(e) => e.collect(),
+        Err(()) => return Err(anyhow!("Unable to find syntaxhighlight elements")),
+    };
+    for node in syntax_elements {
+        let attrs = match node.as_node().as_element() {
+            Some(e) => e.attributes.borrow(),
+            None => continue,
+        };
+        let language = attrs.get("lang").unwrap_or("text");
+        let theme_name = attrs.get("theme").unwrap_or("base16-ocean.dark");
+        if let Some(text_node) = node.as_node().first_child() {
+            if let Some(code_text) = text_node.as_text() {
+                let syntax = ps
+                    .find_syntax_by_extension(language)
+                    .or_else(|| ps.find_syntax_by_name(language))
+                    .unwrap_or_else(|| ps.find_syntax_plain_text());
+                let theme = &ts.themes[theme_name];
+                let mut h = HighlightLines::new(syntax, theme);
+                let mut html_output = String::new();
+                write!(html_output, r#"<pre class="syntax-highlight" data-lang="{language}">"#)?;
+                html_output.push_str("<code>");
+                for line in LinesWithEndings::from(&code_text.borrow()) {
+                    let ranges: Vec<(Style, &str)> = h.highlight_line(line, &ps).unwrap();
+                    let escaped = styled_line_to_highlighted_html(&ranges[..], IncludeBackground::No).unwrap();
+                    html_output.push_str(&escaped);
+                }
+                html_output.push_str("</code></pre>");
+                let html_fragment = kuchikiki::parse_html().one(html_output);
+                for child in html_fragment.children() {
+                    node.as_node().insert_before(child);
+                }
+                // Remove the original syntaxhighlight node.
+                node.as_node().detach();
+            }
         }
     }
     Ok(document)
@@ -237,7 +289,6 @@ mod tests {
         let text = d.select_first("#inc1").unwrap().as_node().text_contents();
         assert_eq!(text, "included1");
         assert!(d.select_first("include").is_err());
-
     }
 
     #[test]
@@ -292,7 +343,7 @@ mod tests {
 
     #[test]
     fn basic_markdown() {
-        let page = r#"
+        let page = r"
             <!DOCTYPE html>
             <html>
             <head>
@@ -311,11 +362,41 @@ This is a paragraph with **bold text** and *italic text*.
                     </markdown>
                 </div>
             </body>
-            </html>"#;
+            </html>";
         let document = kuchikiki::parse_html().one(page);
         let d = process_markdown(document).unwrap();
         assert!(d.select_first("markdown").is_err());
         assert!(d.select_first("p").is_ok());
         assert!(d.select_first("ul").is_ok());
+    }
+
+    #[test]
+    fn basic_syntax_highlighting() {
+        let page = r#"
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Syntax Highlighting Test</title>
+            </head>
+            <body>
+                <h1>Code Example</h1>
+                <syntaxhighlight lang="rust">
+fn main() {
+    println!("Hello, world!");
+    let x = 42;
+    let y = "test";
+}
+                </syntaxhighlight>
+            </body>
+            </html>"#;
+        let document = kuchikiki::parse_html().one(page);
+        let d = process_syntax_highlighting(document).unwrap();
+        assert!(d.select_first("syntaxhighlight").is_err());
+        assert!(d.select_first("pre").is_ok());
+        assert!(d.select_first("code").is_ok());
+        let pre = d.select_first("pre").unwrap();
+        let attrs = pre.attributes.borrow();
+        assert_eq!(attrs.get("data-lang"), Some("rust"));
+        assert!(attrs.get("class").unwrap().contains("syntax-highlight"));
     }
 }
