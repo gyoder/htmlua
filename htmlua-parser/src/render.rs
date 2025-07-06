@@ -9,7 +9,7 @@ use anyhow::anyhow;
 use kuchikiki::{NodeRef, traits::TendrilSink};
 use mlua::{Lua, Table};
 
-fn create_luahtml_stdlib(l: &Lua, stdout: &Rc<RefCell<String>>) -> mlua::Result<Table> {
+fn create_htmlua_stdlib(l: &Lua, stdout: &Rc<RefCell<String>>) -> mlua::Result<Table> {
     let t = l.create_table()?;
 
     // This cannot be the best way to do this
@@ -41,7 +41,7 @@ pub fn execute_lua(document: NodeRef) -> Result<NodeRef> {
     let stdout: Rc<RefCell<String>> = Rc::new(RefCell::new(String::new()));
 
     let htmlua_table =
-        create_luahtml_stdlib(&lua, &stdout).map_err(|e| anyhow!("Failed to create Lua stdlib: {}", e))?;
+        create_htmlua_stdlib(&lua, &stdout).map_err(|e| anyhow!("Failed to create Lua stdlib: {}", e))?;
 
     globals
         .set("htmlua", htmlua_table)
@@ -98,8 +98,9 @@ pub fn expand_template(document: NodeRef, component_path: &PathBuf, include_from
             let mut item_path = component_path.clone();
             item_path.push(include_path);
             let component_text = read_to_string(item_path)?;
-            let new_node = kuchikiki::parse_html().one(component_text);
-            let replaced_node = expand_template(new_node, component_path, Some(i.as_node()))?;
+            let new_doc = kuchikiki::parse_html().one(component_text);
+            let new_node = new_doc.select_first("body").map_err(|()| anyhow!("Failed to get body"))?;
+            let replaced_node = expand_template(new_node.as_node().clone(), component_path, Some(i.as_node()))?;
             i.as_node().insert_before(replaced_node);
             i.as_node().detach();
         }
