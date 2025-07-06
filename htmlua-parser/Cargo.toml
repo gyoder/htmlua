@@ -7,6 +7,7 @@ edition = "2024"
 anyhow = "1.0.98"
 kuchikiki = "0.8.2"
 mlua = { version = "0.10.5", features = ["lua54", "vendored", "serialize"] }
+pulldown-cmark = "0.13.0"
 tendril = "0.4.3"
 
 

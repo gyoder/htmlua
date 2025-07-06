@@ -1,13 +1,9 @@
-use std::cell::RefCell;
-use std::fmt::Write;
-use std::fs::read_to_string;
-use std::path::PathBuf;
-use std::rc::Rc;
+use std::{cell::RefCell, fmt::Write, fs::read_to_string, path::PathBuf, rc::Rc};
 
-use anyhow::Result;
-use anyhow::anyhow;
+use anyhow::{Result, anyhow};
 use kuchikiki::{NodeRef, traits::TendrilSink};
 use mlua::{Lua, Table};
+use pulldown_cmark::{Options, Parser, html};
 
 fn create_htmlua_stdlib(l: &Lua, stdout: &Rc<RefCell<String>>) -> mlua::Result<Table> {
     let t = l.create_table()?;
@@ -66,6 +62,30 @@ pub fn execute_lua(document: NodeRef) -> Result<NodeRef> {
         }
     }
 
+    Ok(document)
+}
+
+pub fn process_markdown(document: NodeRef) -> Result<NodeRef> {
+    let markdown_elements: Vec<_> = match document.select("markdown") {
+        Ok(e) => e.collect(),
+        Err(()) => return Err(anyhow!("Unable to find markdown elements")),
+    };
+    for node in markdown_elements {
+        if let Some(text_node) = node.as_node().first_child() {
+            if let Some(markdown_text) = text_node.as_text() {
+                let borrowed_text = markdown_text.borrow();
+                let parser = Parser::new_ext(&borrowed_text, Options::all());
+                let mut html_output = String::new();
+                html::push_html(&mut html_output, parser);
+                let html_fragment = kuchikiki::parse_html().one(html_output);
+                for child in html_fragment.children() {
+                    node.as_node().insert_before(child);
+                }
+                // Remove the original markdown node.
+                node.as_node().detach();
+            }
+        }
+    }
     Ok(document)
 }
 
@@ -268,5 +288,34 @@ mod tests {
         assert_eq!(text, "element 2");
         assert!(d.select_first("exportelement").is_err());
         assert!(d.select_first("includeelement").is_err());
+    }
+
+    #[test]
+    fn basic_markdown() {
+        let page = r#"
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Markdown Test</title>
+            </head>
+            <body>
+                <h1>Hello World</h1>
+                <div>
+                    <markdown>
+# This is a heading
+This is a paragraph with **bold text** and *italic text*.
+
+- Item 1
+- Item 2
+- Item 3
+                    </markdown>
+                </div>
+            </body>
+            </html>"#;
+        let document = kuchikiki::parse_html().one(page);
+        let d = process_markdown(document).unwrap();
+        assert!(d.select_first("markdown").is_err());
+        assert!(d.select_first("p").is_ok());
+        assert!(d.select_first("ul").is_ok());
     }
 }
