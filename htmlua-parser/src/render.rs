@@ -189,6 +189,37 @@ mod tests {
     }
 
     #[test]
+    fn basic_lua_include() {
+        let page = r#"
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Basic HTML Page</title>
+            </head>
+            <body>
+                <h1>Hello World</h1>
+                <p>This is a paragraph.</p>
+                <span><lua>
+                    htmlua.println("Test from Lua!")
+                </lua></span>
+                <include path="comp1.html" />
+            </body>
+            </html>"#;
+        let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        p.push("tests/components");
+        let document = kuchikiki::parse_html().one(page);
+        let d = execute_lua(expand_template(document, &p, None).unwrap()).unwrap();
+        let text = d.select_first("span").unwrap().as_node().text_contents();
+        println!("{}", d.to_string());
+        assert_eq!(text, "Test from Lua!\n");
+        assert!(d.select_first("lua").is_err());
+        let text = d.select_first("#inc1").unwrap().as_node().text_contents();
+        assert_eq!(text, "included1");
+        assert!(d.select_first("include").is_err());
+
+    }
+
+    #[test]
     fn recursive_include() {
         let page = r#"
             <!DOCTYPE html>

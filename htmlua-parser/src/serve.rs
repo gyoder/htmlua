@@ -16,8 +16,8 @@ pub fn serve_content(request_uri: &str) -> Result<String> {
     let page_string = read_to_string(&page_path)?;
 
     let doc = kuchikiki::parse_html().one(page_string);
-    let full_doc = expand_template(doc, &components, None)?;
 
+    let full_doc = expand_template(doc, &components, None)?;
     let executed_doc = execute_lua(full_doc)?;
 
     Ok(executed_doc.to_string())
