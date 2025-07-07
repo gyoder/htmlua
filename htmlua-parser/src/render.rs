@@ -139,11 +139,16 @@ pub fn expand_template(document: NodeRef, component_path: &PathBuf, include_from
 
 pub fn process_syntax_highlighting(document: NodeRef) -> Result<NodeRef> {
     let ps = SyntaxSet::load_defaults_newlines();
-    let ts = ThemeSet::load_defaults();
+    let mut ts = ThemeSet::load_defaults();
     let syntax_elements: Vec<_> = match document.select("syntaxhighlight") {
         Ok(e) => e.collect(),
         Err(()) => return Err(anyhow!("Unable to find syntaxhighlight elements")),
     };
+    if !syntax_elements.is_empty() {
+        // TODO: read from config
+        let themes = PathBuf::from("/var/www/htmlua/themes");
+        ts.add_from_folder(themes)?;
+    }
     for node in syntax_elements {
         let attrs = match node.as_node().as_element() {
             Some(e) => e.attributes.borrow(),
@@ -163,8 +168,8 @@ pub fn process_syntax_highlighting(document: NodeRef) -> Result<NodeRef> {
                 write!(html_output, r#"<pre class="syntax-highlight" data-lang="{language}">"#)?;
                 html_output.push_str("<code>");
                 for line in LinesWithEndings::from(&code_text.borrow()) {
-                    let ranges: Vec<(Style, &str)> = h.highlight_line(line, &ps).unwrap();
-                    let escaped = styled_line_to_highlighted_html(&ranges[..], IncludeBackground::No).unwrap();
+                    let ranges: Vec<(Style, &str)> = h.highlight_line(line, &ps)?;
+                    let escaped = styled_line_to_highlighted_html(&ranges[..], IncludeBackground::No)?;
                     html_output.push_str(&escaped);
                 }
                 html_output.push_str("</code></pre>");
