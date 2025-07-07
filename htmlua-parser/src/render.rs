@@ -12,6 +12,8 @@ use syntect::{
     util::LinesWithEndings,
 };
 
+use crate::helpers::read_doc_from_file;
+
 fn create_htmlua_stdlib(l: &Lua, stdout: &Rc<RefCell<String>>) -> mlua::Result<Table> {
     let t = l.create_table()?;
 
@@ -106,13 +108,14 @@ pub fn expand_template(document: NodeRef, component_path: &PathBuf, include_from
                 let exported = from_node
                     .select_first(format!("exportelement.{name}").as_str())
                     .map_err(|()| anyhow!("Error finding exportelement"))?;
-                exported.as_node().children().for_each(|c| i.as_node().insert_after(c));
+                exported.as_node().children().rev().for_each(|c| i.as_node().insert_after(c));
             }
         }
         while let Ok(i) = document.select_first("includeelement") {
             i.as_node().detach();
         }
     }
+
     for i in document
         .select("include")
         .map_err(|()| anyhow!("Error finding include"))?
@@ -124,12 +127,8 @@ pub fn expand_template(document: NodeRef, component_path: &PathBuf, include_from
         if let Some(include_path) = attrs.get("path") {
             let mut item_path = component_path.clone();
             item_path.push(include_path);
-            let component_text = read_to_string(item_path)?;
-            let new_doc = kuchikiki::parse_html().one(component_text);
-            let new_node = new_doc
-                .select_first("body")
-                .map_err(|()| anyhow!("Failed to get body"))?;
-            let replaced_node = expand_template(new_node.as_node().clone(), component_path, Some(i.as_node()))?;
+            let new_node = read_doc_from_file(item_path)?;
+            let replaced_node = expand_template(new_node, component_path, Some(i.as_node()))?;
             i.as_node().insert_before(replaced_node);
             i.as_node().detach();
         }
