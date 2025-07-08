@@ -119,6 +119,7 @@ pub fn expand_template(document: NodeRef, component_path: &PathBuf, include_from
     for i in document
         .select("include")
         .map_err(|()| anyhow!("Error finding include"))?
+        .collect::<Vec<_>>()
     {
         let attrs = match i.as_node().as_element() {
             Some(e) => e.attributes.borrow(),
@@ -129,9 +130,12 @@ pub fn expand_template(document: NodeRef, component_path: &PathBuf, include_from
             item_path.push(include_path);
             let new_node = read_doc_from_file(item_path)?;
             let replaced_node = expand_template(new_node, component_path, Some(i.as_node()))?;
-            i.as_node().insert_before(replaced_node);
-            i.as_node().detach();
+            replaced_node.select_first("html").map_err(|()| anyhow!("Error finding html"))?.as_node().children().rev().for_each(|c| i.as_node().insert_after(c));
+
         }
+    }
+    while let Ok(i) = document.select_first("include") {
+        i.as_node().detach();
     }
     Ok(document)
 }
@@ -262,6 +266,35 @@ mod tests {
         let d = expand_template(document, &p, None).unwrap();
         let text = d.select_first("span").unwrap().as_node().text_contents();
         assert_eq!(text, "included1");
+        assert!(d.select_first("include").is_err());
+    }
+
+    #[test]
+    fn multiple_include() {
+        let page = r#"
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Basic HTML Page</title>
+            </head>
+            <body>
+                <h1>Hello World</h1>
+                <p>This is a paragraph.</p>
+                <include path="multi1_1.html"></include>
+                <include path="multi1_2.html"></include>
+                <include path="multi1_3.html"></include>
+            </body>
+            </html>"#;
+        let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        p.push("tests/components");
+        let document = kuchikiki::parse_html().one(page);
+        let d = expand_template(document, &p, None).unwrap();
+        let text = d.select_first("#inc1").unwrap().as_node().text_contents();
+        assert_eq!(text, "included1");
+        let text = d.select_first("#inc2").unwrap().as_node().text_contents();
+        assert_eq!(text, "included2");
+        let text = d.select_first("#inc3").unwrap().as_node().text_contents();
+        assert_eq!(text, "included3");
         assert!(d.select_first("include").is_err());
     }
 
