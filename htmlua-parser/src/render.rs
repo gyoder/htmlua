@@ -146,7 +146,7 @@ pub fn process_syntax_highlighting(document: NodeRef) -> Result<NodeRef> {
     if !syntax_elements.is_empty() {
         // TODO: read from config
         let themes = PathBuf::from("/var/www/htmlua/themes");
-        ts.add_from_folder(themes)?;
+        let _ = ts.add_from_folder(themes);
     }
     for node in syntax_elements {
         let attrs = match node.as_node().as_element() {
