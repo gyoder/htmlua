@@ -1,15 +1,15 @@
-use std::{fs::File, io::{BufRead, BufReader, Read, Seek, SeekFrom}, path::PathBuf};
+use std::{
+    fs::File,
+    io::{BufRead, BufReader, Read, Seek, SeekFrom},
+    path::PathBuf,
+};
 
 use anyhow::Result;
 use kuchikiki::NodeRef;
 use markup5ever::{LocalName, Namespace, QualName};
 use tendril::TendrilSink;
 
-
-
-
 pub fn read_doc_from_file(path: PathBuf) -> Result<NodeRef> {
-
     let mut file = File::open(path)?;
     let mut reader = BufReader::new(&mut file);
 
