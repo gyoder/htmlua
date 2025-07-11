@@ -12,32 +12,9 @@ use syntect::{
     util::LinesWithEndings,
 };
 
-use crate::helpers::read_doc_from_file;
+use crate::{helpers::read_doc_from_file, htmlua_stdlib::create_htmlua_stdlib};
 
-fn create_htmlua_stdlib(l: &Lua, stdout: &Rc<RefCell<String>>) -> mlua::Result<Table> {
-    let t = l.create_table()?;
 
-    // This cannot be the best way to do this
-
-    let stdout_println = stdout.clone();
-    t.set(
-        "println",
-        l.create_function(move |_, text: String| {
-            let mut stdout_ref = stdout_println.borrow_mut();
-            writeln!(stdout_ref, "{text}").map_err(mlua::Error::external)
-        })?,
-    )?;
-
-    let stdout_print = stdout.clone();
-    t.set(
-        "print",
-        l.create_function(move |_, text: String| {
-            let mut stdout_ref = stdout_print.borrow_mut();
-            write!(stdout_ref, "{text}").map_err(mlua::Error::external)
-        })?,
-    )?;
-    Ok(t)
-}
 
 pub fn execute_lua(document: NodeRef) -> Result<NodeRef> {
     let lua = Lua::new();

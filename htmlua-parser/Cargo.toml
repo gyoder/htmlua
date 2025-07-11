@@ -8,8 +8,11 @@ anyhow = "1.0.98"
 html5ever = "0.35.0"
 kuchikiki = "0.8.2"
 markup5ever = "0.11.0"
-mlua = { version = "0.10.5", features = ["lua54", "vendored", "serialize"] }
+mlua = { version = "0.10.5", features = ["lua54", "vendored", "serialize", "anyhow"] }
 pulldown-cmark = "0.13.0"
+reqwest = { version = "0.12.22", features = ["blocking", "json"] }
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
 syntect = "5.2.0"
 tendril = "0.4.3"
 
