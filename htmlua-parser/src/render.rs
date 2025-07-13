@@ -5,9 +5,10 @@ use std::{
     rc::Rc,
 };
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use kuchikiki::{NodeRef, traits::TendrilSink};
-use mlua::Lua;
+use markup5ever::{LocalName, Namespace, QualName};
+use mlua::{Lua, Table};
 use pulldown_cmark::{Options, Parser, html};
 use syntect::{
     easy::HighlightLines,
@@ -177,6 +178,29 @@ pub fn process_syntax_highlighting(document: NodeRef) -> Result<NodeRef> {
             }
         }
     }
+    Ok(document)
+}
+
+pub fn generate_footnotes(document: NodeRef) -> Result<NodeRef> {
+    let Ok(footnote_container) = document.select_first("footnotecontainer") else { return Ok(document) };
+
+    let ctx_name = QualName::new(None, Namespace::from("http://www.w3.org/1999/xhtml"), LocalName::from("div"));
+    for (i, footnote) in document.select("footnote").map_err(|()| anyhow!("Failed to get footnote"))?.enumerate() {
+        let i = i + 1;
+        let fn_text = footnote.text_contents();
+        let sup_tag = kuchikiki::parse_fragment(ctx_name.clone(), Vec::new()).one(
+            format!("<a href=#ft-text-{i}><sup id=\"ft-sup-{i}\" title=\"{fn_text}\">{i}</sup></a>")
+        ).select_first("a").map_err(|()| anyhow!("parse err"))?;
+        footnote.as_node().insert_after(sup_tag.as_node().clone());
+        let text_tag = kuchikiki::parse_fragment(ctx_name.clone(), Vec::new()).one(
+            format!("<p id=\"ft-text-{i}\"><a href=#ft-sup-{i}>{i}:</a> {fn_text}</p>")
+        ).select_first("p").map_err(|()| anyhow!("parse err"))?;
+        footnote_container.as_node().insert_before(text_tag.as_node().clone());
+    }
+    while let Ok(i) = document.select_first("footnote") {
+        i.as_node().detach();
+    }
+    footnote_container.as_node().detach();
     Ok(document)
 }
 
@@ -370,6 +394,46 @@ mod tests {
         assert_eq!(text, "element 2");
         assert!(d.select_first("exportelement").is_err());
         assert!(d.select_first("includeelement").is_err());
+    }
+
+    #[test]
+    fn footnotes() {
+        let page = r"
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Basic HTML Page</title>
+            </head>
+            <body>
+                <div>
+                    <p>asdf</p>
+                    <p>asdf<footnote>um actually</footnote></p>
+                    <p>asdf</p>
+                    <p>asdf<footnote>no</footnote></p>
+                </div>
+                <div>
+                <footnotecontainer></footnotecontainer>
+                </div>
+                </body>
+                </html>";
+        let document = kuchikiki::parse_html().one(page);
+        let d = generate_footnotes(document).unwrap();
+        let sup1 = d.select_first("#ft-sup-1").unwrap();
+        assert_eq!(sup1.attributes.borrow().get("title").unwrap(), "um actually");
+        assert_eq!(sup1.text_contents(), "1");
+
+        let sup2 = d.select_first("#ft-sup-2").unwrap();
+        assert_eq!(sup2.attributes.borrow().get("title").unwrap(), "no");
+        assert_eq!(sup2.text_contents(), "2");
+
+        let ft_text_1 = d.select_first("#ft-text-1").unwrap();
+        assert!(ft_text_1.text_contents().contains("um actually"));
+
+        let ft_text_2 = d.select_first("#ft-text-2").unwrap();
+        assert!(ft_text_2.text_contents().contains("no"));
+
+        assert!(d.select_first("footnote").is_err());
+        assert!(d.select_first("footnotecontainer").is_err());
     }
 
     #[test]
