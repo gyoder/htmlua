@@ -9,9 +9,6 @@ use kuchikiki::NodeRef;
 use markup5ever::{LocalName, Namespace, QualName};
 use tendril::TendrilSink;
 
-
-
-
 pub fn read_doc_from_file(path: PathBuf) -> Result<NodeRef> {
     let mut file = File::open(path)?;
     let mut reader = BufReader::new(&mut file);

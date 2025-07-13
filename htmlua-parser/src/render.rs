@@ -17,7 +17,7 @@ use syntect::{
     util::LinesWithEndings,
 };
 
-use crate::{helpers::read_doc_from_file, htmlua_stdlib::create_htmlua_stdlib};
+use crate::{helpers::read_doc_from_file, htmlua_stdlib::create_htmlua_stdlib, serve::get_config};
 
 
 fn build_lua_with_stdout(stdout: &Rc<RefCell<String>>) -> Result<Lua> {
@@ -134,16 +134,15 @@ pub fn expand_template(document: NodeRef, component_path: &PathBuf, include_from
 }
 
 pub fn process_syntax_highlighting(document: NodeRef) -> Result<NodeRef> {
+    let config = get_config();
     let ps = SyntaxSet::load_defaults_newlines();
     let mut ts = ThemeSet::load_defaults();
     let syntax_elements: Vec<_> = match document.select("syntaxhighlight") {
         Ok(e) => e.collect(),
         Err(()) => return Err(anyhow!("Unable to find syntaxhighlight elements")),
     };
-    if !syntax_elements.is_empty() {
-        // TODO: read from config
-        let themes = PathBuf::from("/var/www/htmlua/themes");
-        let _ = ts.add_from_folder(themes);
+    if !syntax_elements.is_empty() && config.syntax_highlighting.load_custom_themes {
+        let _ = ts.add_from_folder(&config.paths.themes);
     }
     for node in syntax_elements {
         let attrs = match node.as_node().as_element() {
@@ -151,7 +150,7 @@ pub fn process_syntax_highlighting(document: NodeRef) -> Result<NodeRef> {
             None => continue,
         };
         let language = attrs.get("lang").unwrap_or("text");
-        let theme_name = attrs.get("theme").unwrap_or("base16-ocean.dark");
+        let theme_name = attrs.get("theme").unwrap_or(&config.syntax_highlighting.default_theme);
         if let Some(text_node) = node.as_node().first_child() {
             if let Some(code_text) = text_node.as_text() {
                 let syntax = ps
