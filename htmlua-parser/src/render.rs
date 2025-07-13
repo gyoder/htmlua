@@ -5,7 +5,7 @@ use std::{
     rc::Rc,
 };
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use kuchikiki::{NodeRef, traits::TendrilSink};
 use markup5ever::{LocalName, Namespace, QualName};
 use mlua::{Lua, Table};
@@ -182,19 +182,27 @@ pub fn process_syntax_highlighting(document: NodeRef) -> Result<NodeRef> {
 }
 
 pub fn generate_footnotes(document: NodeRef) -> Result<NodeRef> {
-    let Ok(footnote_container) = document.select_first("footnotecontainer") else { return Ok(document) };
+    let Ok(footnote_container) = document.select_first("footnotecontainer") else {
+        return Ok(document);
+    };
 
     let ctx_name = QualName::new(None, Namespace::from("http://www.w3.org/1999/xhtml"), LocalName::from("div"));
-    for (i, footnote) in document.select("footnote").map_err(|()| anyhow!("Failed to get footnote"))?.enumerate() {
+    for (i, footnote) in document
+        .select("footnote")
+        .map_err(|()| anyhow!("Failed to get footnote"))?
+        .enumerate()
+    {
         let i = i + 1;
         let fn_text = footnote.text_contents();
-        let sup_tag = kuchikiki::parse_fragment(ctx_name.clone(), Vec::new()).one(
-            format!("<a href=#ft-text-{i}><sup id=\"ft-sup-{i}\" title=\"{fn_text}\">{i}</sup></a>")
-        ).select_first("a").map_err(|()| anyhow!("parse err"))?;
+        let sup_tag = kuchikiki::parse_fragment(ctx_name.clone(), Vec::new())
+            .one(format!("<a href=#ft-text-{i}><sup id=\"ft-sup-{i}\" title=\"{fn_text}\">{i}</sup></a>"))
+            .select_first("a")
+            .map_err(|()| anyhow!("parse err"))?;
         footnote.as_node().insert_after(sup_tag.as_node().clone());
-        let text_tag = kuchikiki::parse_fragment(ctx_name.clone(), Vec::new()).one(
-            format!("<p id=\"ft-text-{i}\"><a href=#ft-sup-{i}>{i}:</a> {fn_text}</p>")
-        ).select_first("p").map_err(|()| anyhow!("parse err"))?;
+        let text_tag = kuchikiki::parse_fragment(ctx_name.clone(), Vec::new())
+            .one(format!("<p id=\"ft-text-{i}\"><a href=#ft-sup-{i}>{i}:</a> {fn_text}</p>"))
+            .select_first("p")
+            .map_err(|()| anyhow!("parse err"))?;
         footnote_container.as_node().insert_before(text_tag.as_node().clone());
     }
     while let Ok(i) = document.select_first("footnote") {

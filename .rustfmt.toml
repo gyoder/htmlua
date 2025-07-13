@@ -9,3 +9,5 @@ brace_style = "PreferSameLine"
 blank_lines_upper_bound = 5
 combine_control_expr = false
 wrap_comments = false
+group_imports = "StdExternalCrate"
+imports_granularity = "Crate"
