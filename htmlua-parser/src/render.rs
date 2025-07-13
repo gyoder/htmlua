@@ -1,8 +1,13 @@
-use std::{cell::RefCell, fmt::Write, fs::read_to_string, path::PathBuf, rc::Rc};
+use std::{
+    cell::{LazyCell, RefCell},
+    fmt::Write,
+    path::PathBuf,
+    rc::Rc,
+};
 
 use anyhow::{Result, anyhow};
 use kuchikiki::{NodeRef, traits::TendrilSink};
-use mlua::{Lua, Table};
+use mlua::Lua;
 use pulldown_cmark::{Options, Parser, html};
 use syntect::{
     easy::HighlightLines,
@@ -15,20 +20,22 @@ use syntect::{
 use crate::{helpers::read_doc_from_file, htmlua_stdlib::create_htmlua_stdlib};
 
 
-
-pub fn execute_lua(document: NodeRef) -> Result<NodeRef> {
+fn build_lua_with_stdout(stdout: &Rc<RefCell<String>>) -> Result<Lua> {
     let lua = Lua::new();
     let globals = lua.globals();
 
-    let stdout: Rc<RefCell<String>> = Rc::new(RefCell::new(String::new()));
-
-    let htmlua_table =
-        create_htmlua_stdlib(&lua, &stdout).map_err(|e| anyhow!("Failed to create Lua stdlib: {}", e))?;
+    let htmlua_table = create_htmlua_stdlib(&lua, stdout).map_err(|e| anyhow!("Failed to create Lua stdlib: {}", e))?;
 
     globals
         .set("htmlua", htmlua_table)
         .map_err(|e| anyhow!("Failed to set global: {}", e))?;
 
+    Ok(lua)
+}
+
+pub fn execute_lua(document: NodeRef) -> Result<NodeRef> {
+    let stdout: Rc<RefCell<String>> = Rc::new(RefCell::new(String::new()));
+    let lua = LazyCell::new(|| build_lua_with_stdout(&stdout).unwrap_or_default());
     let lua_elements: Vec<_> = match document.select("lua") {
         Ok(e) => e.collect(),
         Err(()) => return Err(anyhow!("Unable to find Lua")),
@@ -85,7 +92,11 @@ pub fn expand_template(document: NodeRef, component_path: &PathBuf, include_from
                 let exported = from_node
                     .select_first(format!("exportelement.{name}").as_str())
                     .map_err(|()| anyhow!("Error finding exportelement"))?;
-                exported.as_node().children().rev().for_each(|c| i.as_node().insert_after(c));
+                exported
+                    .as_node()
+                    .children()
+                    .rev()
+                    .for_each(|c| i.as_node().insert_after(c));
             }
         }
         while let Ok(i) = document.select_first("includeelement") {
@@ -107,8 +118,13 @@ pub fn expand_template(document: NodeRef, component_path: &PathBuf, include_from
             item_path.push(include_path);
             let new_node = read_doc_from_file(item_path)?;
             let replaced_node = expand_template(new_node, component_path, Some(i.as_node()))?;
-            replaced_node.select_first("html").map_err(|()| anyhow!("Error finding html"))?.as_node().children().rev().for_each(|c| i.as_node().insert_after(c));
-
+            replaced_node
+                .select_first("html")
+                .map_err(|()| anyhow!("Error finding html"))?
+                .as_node()
+                .children()
+                .rev()
+                .for_each(|c| i.as_node().insert_after(c));
         }
     }
     while let Ok(i) = document.select_first("include") {
@@ -167,6 +183,8 @@ pub fn process_syntax_highlighting(document: NodeRef) -> Result<NodeRef> {
 
 #[cfg(test)]
 mod tests {
+    use httptest::{Expectation, ServerPool, matchers::*, responders::*};
+
     use super::*;
 
     #[test]
@@ -412,5 +430,142 @@ fn main() {
         let attrs = pre.attributes.borrow();
         assert_eq!(attrs.get("data-lang"), Some("rust"));
         assert!(attrs.get("class").unwrap().contains("syntax-highlight"));
+    }
+
+    static SERVER_POOL: ServerPool = ServerPool::new(2);
+
+    #[test]
+    fn basic_get() {
+        let server = SERVER_POOL.get_server();
+
+        server.expect(
+            Expectation::matching(request::method_path("GET", "/test/1")).respond_with(status_code(200).body("ret")),
+        );
+
+        let stdout = Rc::new(RefCell::new(String::new()));
+        let lua = build_lua_with_stdout(&stdout).unwrap();
+        let code = format!("htmlua.print(htmlua.http.get(\"{}\").body)", server.url("/test/1"));
+        lua.load(code).exec().unwrap();
+        assert_eq!(stdout.borrow().as_str(), "ret");
+    }
+
+    #[test]
+    fn basic_post() {
+        let server = SERVER_POOL.get_server();
+
+        server.expect(
+            Expectation::matching(request::method_path("POST", "/test/1")).respond_with(status_code(200).body("ret")),
+        );
+
+        let stdout = Rc::new(RefCell::new(String::new()));
+        let lua = build_lua_with_stdout(&stdout).unwrap();
+        let code = format!("htmlua.print(htmlua.http.post(\"{}\").body)", server.url("/test/1"));
+        lua.load(code).exec().unwrap();
+        assert_eq!(stdout.borrow().as_str(), "ret");
+    }
+
+    #[test]
+    fn get_with_data() {
+        let server = SERVER_POOL.get_server();
+
+        server.expect(
+            Expectation::matching(request::query(url_decoded(contains(("a", "b")))))
+                .respond_with(status_code(200).body("ret")),
+        );
+
+        let stdout = Rc::new(RefCell::new(String::new()));
+        let lua = build_lua_with_stdout(&stdout).unwrap();
+        let code = format!(
+            "
+                data = {{}}
+                data.a = \"b\"
+                htmlua.print(htmlua.http.get_with_data(\"{}\", data).body)
+            ",
+            server.url("/test/1")
+        );
+        lua.load(code).exec().unwrap();
+        assert_eq!(stdout.borrow().as_str(), "ret");
+    }
+
+    #[test]
+    fn post_with_data_form() {
+        let server = SERVER_POOL.get_server();
+
+        server.expect(
+            Expectation::matching(all_of![request::method_path("POST", "/test/1"), request::body("a=b")])
+                .respond_with(status_code(200).body("ret")),
+        );
+
+        let stdout = Rc::new(RefCell::new(String::new()));
+        let lua = build_lua_with_stdout(&stdout).unwrap();
+        let code = format!(
+            "
+                data = {{}}
+                data.a = \"b\"
+                htmlua.print(htmlua.http.post_with_data_form(\"{}\", data).body)
+            ",
+            server.url("/test/1")
+        );
+        lua.load(code).exec().unwrap();
+        assert_eq!(stdout.borrow().as_str(), "ret");
+    }
+
+    #[test]
+    fn post_with_data_json() {
+        let server = SERVER_POOL.get_server();
+
+        server.expect(
+            Expectation::matching(all_of![request::method_path("POST", "/test/1"), request::body(r#"{"a":"b"}"#)])
+                .respond_with(status_code(200).body("ret")),
+        );
+
+        let stdout = Rc::new(RefCell::new(String::new()));
+        let lua = build_lua_with_stdout(&stdout).unwrap();
+        let code = format!(
+            "
+                data = {{}}
+                data.a = \"b\"
+                htmlua.print(htmlua.http.post_with_data_json(\"{}\", data).body)
+            ",
+            server.url("/test/1")
+        );
+        lua.load(code).exec().unwrap();
+        assert_eq!(stdout.borrow().as_str(), "ret");
+    }
+
+    #[test]
+    fn table_request() {
+        let server = SERVER_POOL.get_server();
+
+        server.expect(
+            Expectation::matching(all_of![
+                request::method_path("GET", "/test/1"),
+                request::body("cool"),
+                request::headers(contains(("testhdr", "val"))),
+                request::headers(contains(("authorization", "Basic dXNlcjpwYXNz"))),
+            ])
+            .respond_with(status_code(200).body("ret")),
+        );
+
+        let stdout = Rc::new(RefCell::new(String::new()));
+        let lua = build_lua_with_stdout(&stdout).unwrap();
+        let code = format!(
+            "
+                req = {{}}
+                req.url = \"{}\"
+                req.method = \"GET\"
+                req.headers = {{}}
+                req.headers.testhdr = \"val\"
+                req.basic_auth = {{}}
+                req.basic_auth.username = \"user\"
+                req.basic_auth.password = \"pass\"
+                req.body = \"cool\"
+
+                htmlua.print(htmlua.http.request(req).body)
+            ",
+            server.url("/test/1")
+        );
+        lua.load(code).exec().unwrap();
+        assert_eq!(stdout.borrow().as_str(), "ret");
     }
 }

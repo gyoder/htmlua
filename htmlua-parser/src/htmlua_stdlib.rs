@@ -1,10 +1,19 @@
-use std::{cell::{LazyCell, RefCell}, collections::HashMap, fmt::Write, rc::Rc};
+use std::{
+    cell::{LazyCell, RefCell},
+    collections::HashMap,
+    fmt::Write,
+    rc::Rc,
+    str::FromStr,
+    time::Duration,
+};
 
-use anyhow::anyhow;
-use mlua::{prelude::*, Error, Lua, Table};
-use reqwest::{blocking::{Client, Response}, header::HeaderMap};
+use mlua::{Error, Lua, Table, prelude::*};
+use reqwest::{
+    Method, Url,
+    blocking::{Client, Response},
+    header::HeaderMap,
+};
 use serde::{Deserialize, Serialize};
-use serde_json::to_value;
 
 
 pub fn create_htmlua_stdlib(l: &Lua, stdout: &Rc<RefCell<String>>) -> mlua::Result<Table> {
@@ -34,13 +43,16 @@ pub fn create_htmlua_stdlib(l: &Lua, stdout: &Rc<RefCell<String>>) -> mlua::Resu
     Ok(t)
 }
 
+#[allow(clippy::too_many_lines)]
 fn create_http_lib(l: &Lua) -> mlua::Result<Table> {
     let t = l.create_table()?;
-    let http_client: Rc<LazyCell<Client>> = Rc::new(LazyCell::new(|| Client::builder()
+    let http_client: Rc<LazyCell<Client>> = Rc::new(LazyCell::new(|| {
+        Client::builder()
             .timeout(std::time::Duration::from_secs(3))
             .user_agent("htmlua/0.1.0")
-            .build().unwrap()
-        ));
+            .build()
+            .unwrap()
+    }));
 
 
     let client = http_client.clone();
@@ -50,56 +62,116 @@ fn create_http_lib(l: &Lua) -> mlua::Result<Table> {
             let res = client.get(url).send().map_err(|e| Error::RuntimeError(e.to_string()))?;
             let lua_res: LuaHttpResponse = TryFrom::try_from(res)?;
             Ok(lua_res)
-        })?
+        })?,
     )?;
 
     let client = http_client.clone();
     t.set(
         "post",
         l.create_function(move |_, url: String| {
-            let res = client.post(url).send().map_err(|e| Error::RuntimeError(e.to_string()))?;
+            let res = client
+                .post(url)
+                .send()
+                .map_err(|e| Error::RuntimeError(e.to_string()))?;
             let lua_res: LuaHttpResponse = TryFrom::try_from(res)?;
             Ok(lua_res)
-        })?
+        })?,
     )?;
 
     let client = http_client.clone();
     t.set(
         "get_with_data",
         l.create_function(move |_, (url, data): (String, HashMap<String, String>)| {
-            let res = client.get(url).query(&data).send().map_err(|e| Error::RuntimeError(e.to_string()))?;
+            let res = client
+                .get(url)
+                .query(&data)
+                .send()
+                .map_err(|e| Error::RuntimeError(e.to_string()))?;
             let lua_res: LuaHttpResponse = TryFrom::try_from(res)?;
             Ok(lua_res)
-        })?
+        })?,
     )?;
 
     let client = http_client.clone();
     t.set(
         "post_with_data_form",
         l.create_function(move |_, (url, data): (String, HashMap<String, String>)| {
-            let res = client.post(url).form(&data).send().map_err(|e| Error::RuntimeError(e.to_string()))?;
+            let res = client
+                .post(url)
+                .form(&data)
+                .send()
+                .map_err(|e| Error::RuntimeError(e.to_string()))?;
             let lua_res: LuaHttpResponse = TryFrom::try_from(res)?;
             Ok(lua_res)
-        })?
+        })?,
     )?;
 
     let client = http_client.clone();
     t.set(
         "post_with_data_json",
         l.create_function(move |_, (url, data): (String, HashMap<String, String>)| {
-            let res = client.post(url).json(&data).send().map_err(|e| Error::RuntimeError(e.to_string()))?;
+            let res = client
+                .post(url)
+                .json(&data)
+                .send()
+                .map_err(|e| Error::RuntimeError(e.to_string()))?;
             let lua_res: LuaHttpResponse = TryFrom::try_from(res)?;
             Ok(lua_res)
-        })?
+        })?,
     )?;
-    //TODO: all http
+
+    let client = http_client.clone();
+    t.set(
+        "request",
+        l.create_function(move |_, table: mlua::Table| {
+            let mut request = client.request(
+                Method::from_bytes(table.get::<String>("method")?.as_bytes())
+                    .map_err(|e| Error::RuntimeError(e.to_string()))?,
+                Url::from_str(table.get::<String>("url")?.as_str()).map_err(|e| Error::RuntimeError(e.to_string()))?,
+            );
+
+            if let Ok(header_tbl) = table.get::<mlua::Table>("headers") {
+                request = header_tbl
+                    .pairs::<String, String>()
+                    .filter_map(std::result::Result::ok)
+                    .fold(request, |req, (k, v)| req.header(k, v));
+            }
+
+            if let Ok(basic_auth) = table.get::<mlua::Table>("basic_auth") {
+                request = request
+                    .basic_auth(basic_auth.get::<String>("username")?, basic_auth.get::<String>("password").ok());
+            }
+
+            if let Ok(bearer_auth) = table.get::<mlua::Table>("bearer_auth") {
+                request = request.bearer_auth(bearer_auth.get::<String>("token")?);
+            }
+
+            if let Ok(body) = table.get::<String>("body") {
+                request = request.body(body);
+            }
+
+            if let Ok(json) = table.get::<String>("json") {
+                request = request.json(&json);
+            }
+
+            if let Ok(timeout) = table.get::<u64>("timeout") {
+                request = request.timeout(Duration::from_secs(timeout));
+            }
+
+
+            let res = request.send().map_err(|e| Error::RuntimeError(e.to_string()))?;
+            let lua_res: LuaHttpResponse = TryFrom::try_from(res)?;
+            Ok(lua_res)
+        })?,
+    )?;
 
     t.set(
         "decode_json",
         l.create_function(move |l, text: String| {
-            let table: serde_json::Value = serde_json::from_str(&text).map_err(|e| Error::RuntimeError(e.to_string()))?;
+            let table: serde_json::Value =
+                serde_json::from_str(&text).map_err(|e| Error::RuntimeError(e.to_string()))?;
             Ok(l.to_value(&table))
-        })?
+        })?,
     )?;
 
     Ok(t)
@@ -115,7 +187,11 @@ struct LuaHttpResponse {
 
 impl TryFrom<Response> for LuaHttpResponse {
     fn try_from(value: Response) -> Result<Self, Self::Error> {
-        Ok(LuaHttpResponse { headers: headermap_to_hashmap(value.headers()), status: value.status().as_u16(), body: value.text().map_err(|e| Error::RuntimeError(e.to_string()))?, })
+        Ok(LuaHttpResponse {
+            headers: headermap_to_hashmap(value.headers()),
+            status: value.status().as_u16(),
+            body: value.text().map_err(|e| Error::RuntimeError(e.to_string()))?,
+        })
     }
 
     type Error = Error;
@@ -132,6 +208,7 @@ fn headermap_to_hashmap(headers: &HeaderMap) -> HashMap<String, String> {
 
     map
 }
+
 
 impl IntoLua for LuaHttpResponse {
     fn into_lua(self, lua: &Lua) -> LuaResult<LuaValue> {

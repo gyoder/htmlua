@@ -2,8 +2,7 @@ use crate::helpers::read_doc_from_file;
 
 use super::render::{execute_lua, expand_template, process_markdown, process_syntax_highlighting};
 use anyhow::Result;
-use std::path::{Path, PathBuf}
-;
+use std::path::{Path, PathBuf};
 
 pub fn serve_content(request_uri: &str) -> Result<String> {
     // TODO: read from config
