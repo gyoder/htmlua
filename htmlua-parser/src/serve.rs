@@ -1,10 +1,12 @@
+use std::{path::Path, sync::OnceLock};
+
+use anyhow::Result;
+
 use crate::{
     config::Config,
     helpers::read_doc_from_file,
     render::{execute_lua, expand_template, process_markdown, process_syntax_highlighting},
 };
-use anyhow::Result;
-use std::{path::Path, sync::OnceLock};
 
 static CONFIG: OnceLock<Config> = OnceLock::new();
 

@@ -1,5 +1,6 @@
-use htmlua_parser::serve::serve_content;
 use std::env;
+
+use htmlua_parser::serve::serve_content;
 
 fn main() {
     println!("Content-Type: text/html\n");
