@@ -6,8 +6,9 @@ use std::{
 
 use anyhow::Result;
 use kuchikiki::NodeRef;
-use markup5ever::{LocalName, Namespace, QualName};
+use markup5ever::{ns, LocalName, Namespace, namespace_url, QualName};
 use tendril::TendrilSink;
+
 
 pub fn read_doc_from_file(path: PathBuf) -> Result<NodeRef> {
     let mut file = File::open(path)?;
@@ -26,7 +27,7 @@ pub fn read_doc_from_file(path: PathBuf) -> Result<NodeRef> {
     if is_whole_doc {
         Ok(kuchikiki::parse_html().one(page_string))
     } else {
-        let ctx_name = QualName::new(None, Namespace::from("http://www.w3.org/1999/xhtml"), LocalName::from("div"));
+        let ctx_name = QualName::new(None, ns!(), LocalName::from("div"));
         Ok(kuchikiki::parse_fragment(ctx_name, Vec::new()).one(page_string))
     }
 }

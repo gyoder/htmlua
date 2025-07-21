@@ -215,6 +215,7 @@ pub fn generate_footnotes(document: NodeRef) -> Result<NodeRef> {
 #[cfg(test)]
 mod tests {
     use httptest::{Expectation, ServerPool, matchers::*, responders::*};
+    use markup5ever::{ns, namespace_url};
 
     use super::*;
 
@@ -346,7 +347,6 @@ mod tests {
         let document = kuchikiki::parse_html().one(page);
         let d = execute_lua(expand_template(document, &p, None).unwrap()).unwrap();
         let text = d.select_first("span").unwrap().as_node().text_contents();
-        println!("{}", d.to_string());
         assert_eq!(text, "Test from Lua!\n");
         assert!(d.select_first("lua").is_err());
         let text = d.select_first("#inc1").unwrap().as_node().text_contents();
@@ -400,6 +400,27 @@ mod tests {
         assert_eq!(text, "element 1");
         let text = d.select_first("#tb").unwrap().as_node().text_contents();
         assert_eq!(text, "element 2");
+        assert!(d.select_first("exportelement").is_err());
+        assert!(d.select_first("includeelement").is_err());
+    }
+
+    #[test]
+    fn include_base() {
+        let page = r#"
+            <include path="include_base.html">
+                <exportelement class="t"><title>title_test</title></exportelement>
+                <exportelement class="b"><span id="tb">body_el</span></exportelement>
+            </include>
+            "#;
+        let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        p.push("tests/components");
+        let ctx_name = QualName::new(None, ns!(html), LocalName::from("div"));
+        let document = kuchikiki::parse_fragment(ctx_name, Vec::new()).one(page);
+        let d = expand_template(document, &p, None).unwrap();
+        let text = d.select_first("head").unwrap().as_node().select_first("title").unwrap().as_node().text_contents();
+        assert_eq!(text, "title_test");
+        let text = d.select_first("#tb").unwrap().as_node().text_contents();
+        assert_eq!(text, "body_el");
         assert!(d.select_first("exportelement").is_err());
         assert!(d.select_first("includeelement").is_err());
     }
