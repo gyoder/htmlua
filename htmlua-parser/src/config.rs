@@ -95,5 +95,6 @@ impl Config {
         Ok(())
     }
 
+    #[must_use]
     pub fn config_file_path() -> PathBuf { Self::get_config_path() }
 }

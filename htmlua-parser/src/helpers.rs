@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::Result;
 use kuchikiki::NodeRef;
-use markup5ever::{ns, LocalName, Namespace, namespace_url, QualName};
+use markup5ever::{LocalName, QualName, namespace_url, ns};
 use tendril::TendrilSink;
 
 

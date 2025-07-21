@@ -8,7 +8,7 @@ use std::{
 use anyhow::{Result, anyhow};
 use kuchikiki::{NodeRef, traits::TendrilSink};
 use markup5ever::{LocalName, Namespace, QualName};
-use mlua::{Lua, Table};
+use mlua::Lua;
 use pulldown_cmark::{Options, Parser, html};
 use syntect::{
     easy::HighlightLines,
@@ -215,7 +215,7 @@ pub fn generate_footnotes(document: NodeRef) -> Result<NodeRef> {
 #[cfg(test)]
 mod tests {
     use httptest::{Expectation, ServerPool, matchers::*, responders::*};
-    use markup5ever::{ns, namespace_url};
+    use markup5ever::{namespace_url, ns};
 
     use super::*;
 
@@ -417,7 +417,14 @@ mod tests {
         let ctx_name = QualName::new(None, ns!(html), LocalName::from("div"));
         let document = kuchikiki::parse_fragment(ctx_name, Vec::new()).one(page);
         let d = expand_template(document, &p, None).unwrap();
-        let text = d.select_first("head").unwrap().as_node().select_first("title").unwrap().as_node().text_contents();
+        let text = d
+            .select_first("head")
+            .unwrap()
+            .as_node()
+            .select_first("title")
+            .unwrap()
+            .as_node()
+            .text_contents();
         assert_eq!(text, "title_test");
         let text = d.select_first("#tb").unwrap().as_node().text_contents();
         assert_eq!(text, "body_el");
