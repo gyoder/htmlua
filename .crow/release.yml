@@ -1,0 +1,23 @@
+# This file is a bit of a hack in order to run the real release CI
+when:
+  - event: push
+    branch: ${CI_REPO_DEFAULT_BRANCH}
+
+clone:
+  git:
+    image: codefloe.com/crow-plugins/clone:1.1.0
+    settings:
+      tags: true
+
+
+steps:
+  - name: retag-latest
+    image: alpine:3.20
+    environment:
+      FORGEJO_TOKEN:
+        from_secret: forgejo_token
+    commands:
+      - apk add --no-cache git
+      - git remote set-url origin "https://oauth2:$${FORGEJO_TOKEN}@$${CI_FORGE_URL#https://}/$${CI_REPO}.git"
+      - git tag -f latest
+      - git push -f origin latest

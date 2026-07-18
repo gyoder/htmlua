@@ -1,0 +1,4 @@
+.{
+    .component_path = "./examples",
+    .template_path = "./examples",
+}
