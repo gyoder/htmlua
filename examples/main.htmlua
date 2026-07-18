@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <title>main</title>
+</head>
+
+<body>
+  <h1>hello</h1>
+  <include path="a.htmlua">
+    <export part=first>
+      <p><b>exported from main!</b></p>
+    </export>
+    <export part=second>
+      <p><b>exported from main but again!</b></p>
+    </export>
+  </include>
+
+</body>
+
+</html>
