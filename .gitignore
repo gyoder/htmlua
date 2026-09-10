@@ -17,3 +17,5 @@ zig-pkg/
 /build/
 /build-*/
 /docgen_tmp/
+/result
+/result-*
